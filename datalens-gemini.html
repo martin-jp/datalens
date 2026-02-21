@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataLens — Free Figure Extractor (Gemini)</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #07090d;
+  --bg2:      #0c0f16;
+  --surface:  #101420;
+  --card:     #131825;
+  --border:   #1c2535;
+  --border2:  #233045;
+  --accent:   #4fc3f7;
+  --accent2:  #0288d1;
+  --accentg:  rgba(79,195,247,0.12);
+  --red:      #ef5350;
+  --amber:    #ffa726;
+  --green:    #66bb6a;
+  --text:     #cdd9e8;
+  --text2:    #7a8fa8;
+  --text3:    #3d5068;
+  --mono:     'IBM Plex Mono', monospace;
+  --display:  'Bebas Neue', sans-serif;
+  --body:     'DM Sans', sans-serif;
+  --r:        6px;
+  --r2:       12px;
+}
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html { scroll-behavior:smooth; }
+
+body {
+  font-family: var(--body);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Dot grid background */
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background-image: radial-gradient(rgba(79,195,247,0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events:none;
+  z-index:0;
+}
+
+/* Scanlines */
+body::after {
+  content:'';
+  position:fixed; inset:0;
+  background: repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.04) 3px,rgba(0,0,0,0.04) 4px);
+  pointer-events:none;
+  z-index:9999;
+}
+
+.app { display:flex; min-height:100vh; position:relative; z-index:1; }
+
+/* ─── SIDEBAR ─── */
+.sidebar {
+  width:230px; min-height:100vh;
+  background:var(--bg2);
+  border-right:1px solid var(--border);
+  display:flex; flex-direction:column;
+  position:fixed; left:0; top:0; bottom:0;
+  z-index:100;
+  transition:transform .3s ease;
+}
+
+.logo-wrap {
+  padding:22px 18px 18px;
+  border-bottom:1px solid var(--border);
+}
+
+.logo-row { display:flex; align-items:center; gap:10px; margin-bottom:3px; }
+
+.logo-gem {
+  width:30px; height:30px;
+  background:linear-gradient(135deg,var(--accent2),var(--accent));
+  border-radius:7px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; flex-shrink:0;
+}
+
+.logo-text { font-family:var(--display); font-size:22px; letter-spacing:1px; line-height:1; }
+.logo-text em { color:var(--accent); font-style:normal; }
+
+.logo-sub {
+  font-family:var(--mono); font-size:9px;
+  color:var(--text3); letter-spacing:1.5px; text-transform:uppercase;
+}
+
+.powered {
+  display:inline-flex; align-items:center; gap:5px;
+  margin-top:8px;
+  font-family:var(--mono); font-size:9px;
+  color:var(--accent); letter-spacing:1px;
+  background:rgba(79,195,247,0.06);
+  border:1px solid rgba(79,195,247,0.15);
+  padding:3px 8px; border-radius:3px;
+  text-transform:uppercase;
+}
+
+.powered::before { content:'◆'; font-size:7px; }
+
+.nav { padding:10px 8px; flex:1; }
+.nav-label { font-family:var(--mono); font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:2px; padding:10px 10px 5px; }
+
+.nav-btn {
+  display:flex; align-items:center; gap:9px;
+  width:100%; padding:9px 12px;
+  border-radius:var(--r); border:1px solid transparent;
+  background:none; color:var(--text2);
+  font-family:var(--body); font-size:13px; font-weight:500;
+  cursor:pointer; transition:all .15s; margin-bottom:2px;
+  text-align:left;
+}
+.nav-btn:hover { background:var(--surface); color:var(--text); border-color:var(--border); }
+.nav-btn.active { background:rgba(79,195,247,0.08); color:var(--accent); border-color:rgba(79,195,247,0.2); }
+.nav-btn .ni { font-size:14px; width:18px; text-align:center; }
+
+.nbadge {
+  margin-left:auto; font-family:var(--mono); font-size:9px;
+  padding:1px 6px; border-radius:3px;
+  background:var(--surface); border:1px solid var(--border); color:var(--text3);
+}
+.nbadge.blue { background:rgba(79,195,247,0.1); border-color:rgba(79,195,247,0.3); color:var(--accent); }
+
+.sidebar-foot {
+  padding:14px; border-top:1px solid var(--border);
+}
+
+/* API Key input in sidebar */
+.apikey-box {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r); padding:10px 12px;
+}
+.apikey-label { font-family:var(--mono); font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+.apikey-input {
+  width:100%; background:var(--bg); border:1px solid var(--border);
+  color:var(--accent); font-family:var(--mono); font-size:10px;
+  padding:6px 8px; border-radius:4px; outline:none;
+  transition:border-color .2s;
+}
+.apikey-input:focus { border-color:var(--accent); }
+.apikey-input::placeholder { color:var(--text3); }
+.apikey-hint { font-family:var(--mono); font-size:9px; color:var(--text3); margin-top:5px; line-height:1.5; }
+.apikey-hint a { color:var(--accent); text-decoration:none; }
+
+/* ─── MAIN ─── */
+.main { margin-left:230px; flex:1; display:flex; flex-direction:column; min-height:100vh; }
+
+.topbar {
+  height:52px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; padding:0 24px; gap:12px;
+  background:rgba(7,9,13,0.85); backdrop-filter:blur(8px);
+  position:sticky; top:0; z-index:50;
+}
+
+.topbar-path { font-family:var(--mono); font-size:11px; color:var(--text2); }
+.topbar-path span { color:var(--accent); }
+
+.topbar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+
+.status-chip {
+  display:flex; align-items:center; gap:6px;
+  font-family:var(--mono); font-size:10px; color:var(--accent);
+  background:rgba(79,195,247,0.05);
+  border:1px solid rgba(79,195,247,0.2);
+  padding:4px 10px; border-radius:20px;
+}
+
+.blink { width:6px; height:6px; background:var(--accent); border-radius:50%; animation:blink 2s infinite; box-shadow:0 0 6px var(--accent); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.content { padding:24px; flex:1; }
+
+.page { display:none; }
+.page.active { display:block; }
+
+/* ─── PAGE HEADER ─── */
+.ph { margin-bottom:24px; }
+.ph-title { font-family:var(--display); font-size:38px; letter-spacing:1px; line-height:1; margin-bottom:4px; }
+.ph-sub { font-size:13px; color:var(--text2); }
+
+/* ─── CARDS / PANELS ─── */
+.panel {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r2); overflow:hidden; display:flex; flex-direction:column;
+}
+
+.panel-head {
+  padding:12px 16px; border-bottom:1px solid var(--border);
+  background:var(--surface); display:flex; align-items:center; gap:8px;
+}
+
+.wdots { display:flex; gap:5px; }
+.wd { width:9px; height:9px; border-radius:50%; }
+.wd-r{background:#ff5f57;} .wd-y{background:#febc2e;} .wd-g{background:#28c840;}
+
+.panel-label { font-family:var(--mono); font-size:10px; color:var(--text2); letter-spacing:.8px; text-transform:uppercase; }
+.panel-label strong { color:var(--accent); }
+
+.panel-body { padding:18px; flex:1; display:flex; flex-direction:column; gap:12px; }
+
+/* ─── EXTRACT LAYOUT ─── */
+.extract-grid {
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:18px; min-height:calc(100vh - 140px);
+}
+
+/* Upload zone */
+.upload-zone {
+  border:1px dashed var(--border2); border-radius:10px;
+  padding:36px 20px; text-align:center; cursor:pointer;
+  transition:all .25s; position:relative;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:260px; background:rgba(79,195,247,0.01);
+}
+.upload-zone:hover,.upload-zone.over { border-color:var(--accent); background:rgba(79,195,247,0.04); }
+.upload-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.uz-icon { font-size:44px; margin-bottom:14px; opacity:.6; }
+.uz-title { font-size:15px; font-weight:600; margin-bottom:5px; }
+.uz-sub { font-family:var(--mono); font-size:11px; color:var(--text3); margin-bottom:14px; }
+.chips { display:flex; gap:5px; justify-content:center; flex-wrap:wrap; }
+.chip { font-family:var(--mono); font-size:9px; padding:2px 7px; background:var(--surface); border:1px solid var(--border); border-radius:3px; color:var(--text3); text-transform:uppercase; }
+
+/* Preview */
+.preview { display:none; flex-direction:column; gap:10px; }
+.preview.show { display:flex; }
+.preview-img-box { background:#000; border:1px solid var(--border); border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; min-height:180px; max-height:300px; }
+.preview-img-box img { max-width:100%; max-height:300px; object-fit:contain; display:block; }
+
+/* Controls */
+.ctrls { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.cg { display:flex; flex-direction:column; gap:4px; }
+.cg-label { font-family:var(--mono); font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:1px; }
+.cg select, .cg input {
+  background:var(--surface); border:1px solid var(--border);
+  color:var(--text); padding:7px 9px;
+  border-radius:var(--r); font-family:var(--mono); font-size:11px;
+  outline:none; transition:border-color .2s; appearance:none; width:100%;
+}
+.cg select:focus,.cg input:focus { border-color:var(--accent); }
+
+/* Buttons */
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  padding:9px 16px; border-radius:var(--r);
+  font-family:var(--body); font-size:13px; font-weight:600;
+  cursor:pointer; transition:all .2s; border:1px solid transparent;
+}
+.btn-primary { background:var(--accent); color:#000; border-color:var(--accent); }
+.btn-primary:hover:not(:disabled) { background:#81d4fa; box-shadow:0 4px 20px rgba(79,195,247,0.35); transform:translateY(-1px); }
+.btn-primary:disabled { opacity:.3; cursor:not-allowed; transform:none; box-shadow:none; }
+.btn-ghost { background:transparent; border-color:var(--border); color:var(--text2); font-size:11px; padding:6px 11px; }
+.btn-ghost:hover { border-color:var(--border2); color:var(--text); }
+.btn-danger { background:transparent; border-color:rgba(239,83,80,.3); color:var(--red); font-size:11px; padding:6px 11px; }
+.btn-danger:hover { background:rgba(239,83,80,.08); }
+.btn-full { width:100%; margin-top:6px; }
+
+.spin { width:15px; height:15px; border:2px solid rgba(0,0,0,.25); border-top-color:#000; border-radius:50%; animation:spin .7s linear infinite; display:none; }
+@keyframes spin { to{transform:rotate(360deg)} }
+
+/* Results */
+.r-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text3); font-family:var(--mono); font-size:11px; text-align:center; gap:10px; }
+.r-empty .big { font-size:32px; opacity:.25; }
+
+.r-content { display:none; flex-direction:column; gap:12px; }
+.r-content.show { display:flex; }
+
+.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+.stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:9px 10px; text-align:center; }
+.stat-v { font-family:var(--mono); font-size:15px; font-weight:700; color:var(--accent); margin-bottom:3px; line-height:1; }
+.stat-k { font-family:var(--mono); font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:.5px; }
+
+.tabs { display:flex; border-bottom:1px solid var(--border); }
+.tab { padding:7px 13px; font-family:var(--mono); font-size:10px; letter-spacing:.5px; text-transform:uppercase; cursor:pointer; color:var(--text3); border-bottom:2px solid transparent; background:none; border-top:none; border-left:none; border-right:none; transition:all .15s; }
+.tab:hover { color:var(--text2); }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+
+.tc { display:none; }
+.tc.active { display:block; }
+
+.tbl-wrap { overflow:auto; border:1px solid var(--border); border-radius:var(--r); max-height:260px; }
+table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:11px; }
+th { background:var(--surface); padding:7px 11px; text-align:left; color:var(--accent); font-size:9px; text-transform:uppercase; letter-spacing:1px; border-bottom:1px solid var(--border); white-space:nowrap; position:sticky; top:0; }
+td { padding:6px 11px; border-bottom:1px solid rgba(28,37,53,.5); color:var(--text2); }
+tr:last-child td { border-bottom:none; }
+tr:hover td { background:rgba(79,195,247,.02); color:var(--text); }
+
+.code-view { background:var(--bg); border:1px solid var(--border); border-radius:var(--r); padding:12px; font-family:var(--mono); font-size:10.5px; line-height:1.7; color:#80cbc4; overflow:auto; max-height:260px; white-space:pre; }
+
+.analysis-view { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px; font-size:13px; line-height:1.75; color:var(--text2); max-height:260px; overflow-y:auto; }
+.analysis-view .as { margin-bottom:12px; }
+.analysis-view h5 { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:1.5px; color:var(--accent); margin-bottom:5px; }
+
+.conf { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.5px; }
+.ch { background:rgba(102,187,106,.12); color:var(--green); border:1px solid rgba(102,187,106,.3); }
+.cm { background:rgba(255,167,38,.12); color:var(--amber); border:1px solid rgba(255,167,38,.3); }
+.cl { background:rgba(239,83,80,.12); color:var(--red); border:1px solid rgba(239,83,80,.3); }
+
+.export-row { display:flex; gap:6px; flex-wrap:wrap; }
+
+/* ─── DASHBOARD ─── */
+.metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px; }
+.metric { background:var(--card); border:1px solid var(--border); border-radius:var(--r2); padding:18px; position:relative; overflow:hidden; transition:border-color .2s; }
+.metric::after { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--accent); opacity:.3; }
+.metric:hover { border-color:var(--border2); }
+.metric-icon { font-size:20px; margin-bottom:10px; display:block; }
+.metric-num { font-family:var(--display); font-size:34px; letter-spacing:1px; line-height:1; margin-bottom:3px; }
+.metric-label { font-family:var(--mono); font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:1px; }
+.metric-badge { position:absolute; top:14px; right:14px; font-family:var(--mono); font-size:9px; padding:2px 6px; border-radius:3px; background:rgba(102,187,106,.1); color:var(--green); }
+
+.dash-grid { display:grid; grid-template-columns:1fr 300px; gap:14px; }
+
+.section-label { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:1.5px; color:var(--text3); margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+.section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+
+.rec-list { display:flex; flex-direction:column; gap:6px; }
+.rec-item { background:var(--card); border:1px solid var(--border); border-radius:var(--r); padding:10px 14px; display:flex; align-items:center; gap:10px; cursor:pointer; transition:all .15s; }
+.rec-item:hover { border-color:var(--border2); background:var(--surface); }
+.rec-icon { width:32px; height:32px; background:var(--surface); border:1px solid var(--border); border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+.rec-info { flex:1; min-width:0; }
+.rec-name { font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:1px; }
+.rec-meta { font-family:var(--mono); font-size:9px; color:var(--text3); }
+.rec-tag { font-family:var(--mono); font-size:9px; padding:2px 6px; border-radius:3px; background:rgba(102,187,106,.1); color:var(--green); border:1px solid rgba(102,187,106,.2); flex-shrink:0; }
+
+.usage-card { background:var(--card); border:1px solid var(--border); border-radius:var(--r2); padding:16px; }
+.u-label { font-family:var(--mono); font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; }
+.ubar-wrap { margin-bottom:12px; }
+.ubar-head { display:flex; justify-content:space-between; font-family:var(--mono); font-size:9px; color:var(--text3); margin-bottom:4px; }
+.ubar-track { background:var(--surface); border:1px solid var(--border); border-radius:3px; height:7px; overflow:hidden; }
+.ubar-fill { height:100%; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:3px; transition:width 1s ease; }
+
+.qactions { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+.qa { display:flex; align-items:center; gap:8px; padding:9px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r); cursor:pointer; font-size:12px; color:var(--text); font-weight:500; transition:all .2s; }
+.qa:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ─── HISTORY ─── */
+.hist-controls { display:flex; gap:8px; margin-bottom:16px; align-items:center; }
+.search { background:var(--card); border:1px solid var(--border); border-radius:var(--r); padding:7px 12px; font-family:var(--mono); font-size:11px; color:var(--text); outline:none; flex:1; min-width:180px; transition:border-color .2s; }
+.search:focus { border-color:var(--accent); }
+.search::placeholder { color:var(--text3); }
+
+.hist-tbl-wrap { background:var(--card); border:1px solid var(--border); border-radius:var(--r2); overflow:hidden; }
+.htbl { width:100%; border-collapse:collapse; font-size:11px; }
+.htbl th { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:1px; color:var(--text3); padding:9px 14px; text-align:left; background:var(--surface); border-bottom:1px solid var(--border); }
+.htbl td { padding:9px 14px; border-bottom:1px solid rgba(28,37,53,.5); color:var(--text2); font-family:var(--mono); font-size:10px; }
+.htbl tr:last-child td { border-bottom:none; }
+.htbl tr:hover td { background:var(--surface); cursor:pointer; }
+.htbl td:first-child { color:var(--text); font-family:var(--body); font-size:12px; font-weight:500; }
+
+/* ─── PRICING ─── */
+.pricing-head { text-align:center; margin-bottom:36px; }
+.pricing-title { font-family:var(--display); font-size:48px; letter-spacing:1px; margin-bottom:8px; }
+.pricing-sub { font-size:14px; color:var(--text2); }
+
+.plan-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; max-width:860px; margin:0 auto; }
+.plan { background:var(--card); border:1px solid var(--border); border-radius:var(--r2); padding:24px; position:relative; transition:border-color .2s,transform .2s; }
+.plan:hover { transform:translateY(-3px); }
+.plan.hot { border-color:rgba(79,195,247,.4); background:linear-gradient(160deg,var(--card),rgba(79,195,247,.03)); }
+.plan.hot::before { content:'MOST POPULAR'; position:absolute; top:-1px; left:50%; transform:translateX(-50%); font-family:var(--mono); font-size:9px; letter-spacing:2px; background:var(--accent); color:#000; padding:3px 12px; border-radius:0 0 5px 5px; font-weight:700; }
+.plan-name { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:2px; color:var(--text3); margin-bottom:10px; }
+.plan-price { font-family:var(--display); font-size:44px; letter-spacing:1px; line-height:1; margin-bottom:3px; }
+.plan-price sup { font-size:22px; vertical-align:top; margin-top:6px; font-family:var(--body); }
+.plan-period { font-family:var(--mono); font-size:10px; color:var(--text3); margin-bottom:16px; }
+.plan-div { border:none; border-top:1px solid var(--border); margin:16px 0; }
+.plan-feats { display:flex; flex-direction:column; gap:8px; margin-bottom:20px; }
+.pf { display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--text2); }
+.pf .ck { color:var(--accent); font-size:11px; flex-shrink:0; margin-top:1px; }
+.pf.dim { color:var(--text3); }
+.pf.dim .ck { color:var(--text3); }
+
+/* ─── SETTINGS ─── */
+.settings-layout { display:grid; grid-template-columns:190px 1fr; gap:18px; }
+.snav { display:flex; flex-direction:column; gap:2px; }
+.snav-btn { padding:7px 11px; border-radius:var(--r); cursor:pointer; font-size:12px; color:var(--text2); background:none; border:1px solid transparent; text-align:left; width:100%; transition:all .15s; }
+.snav-btn:hover { background:var(--surface); color:var(--text); }
+.snav-btn.active { background:rgba(79,195,247,.08); color:var(--accent); border-color:rgba(79,195,247,.2); }
+
+.ssec { background:var(--card); border:1px solid var(--border); border-radius:var(--r2); overflow:hidden; margin-bottom:14px; }
+.ssec-head { padding:12px 18px; border-bottom:1px solid var(--border); background:var(--surface); }
+.ssec-title { font-size:13px; font-weight:600; margin-bottom:1px; }
+.ssec-sub { font-size:11px; color:var(--text3); font-family:var(--mono); }
+.sfield { padding:14px 18px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid rgba(28,37,53,.5); }
+.sfield:last-child { border-bottom:none; }
+.sf-info { flex:1; }
+.sf-label { font-size:13px; font-weight:500; margin-bottom:1px; }
+.sf-desc { font-size:11px; color:var(--text3); font-family:var(--mono); }
+.sf-input { background:var(--surface); border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:var(--r); font-family:var(--mono); font-size:11px; outline:none; transition:border-color .2s; min-width:160px; }
+.sf-input:focus { border-color:var(--accent); }
+.tog { width:38px; height:20px; background:var(--surface); border:1px solid var(--border); border-radius:10px; position:relative; cursor:pointer; flex-shrink:0; transition:all .2s; }
+.tog.on { background:rgba(79,195,247,.2); border-color:rgba(79,195,247,.4); }
+.tog-k { position:absolute; top:3px; left:3px; width:12px; height:12px; background:var(--text3); border-radius:50%; transition:all .2s; }
+.tog.on .tog-k { transform:translateX(18px); background:var(--accent); }
+
+/* ─── TOASTS ─── */
+.toast-box { position:fixed; bottom:20px; right:20px; display:flex; flex-direction:column; gap:6px; z-index:9000; }
+.toast { display:flex; align-items:center; gap:8px; padding:10px 16px; background:var(--card); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--r); font-family:var(--mono); font-size:11px; animation:toastIn .3s ease; max-width:300px; box-shadow:0 6px 24px rgba(0,0,0,.4); }
+.toast.err { border-left-color:var(--red); }
+.toast.warn { border-left-color:var(--amber); }
+@keyframes toastIn  { from{transform:translateX(120%);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes toastOut { from{transform:translateX(0);opacity:1} to{transform:translateX(120%);opacity:0} }
+.toast.out { animation:toastOut .3s ease forwards; }
+
+/* ─── LOADING ─── */
+.loader {
+  position:fixed; inset:0;
+  background:rgba(7,9,13,.88); backdrop-filter:blur(6px);
+  z-index:500; display:none;
+  align-items:center; justify-content:center; flex-direction:column; gap:18px;
+}
+.loader.show { display:flex; }
+.loader-ring {
+  width:52px; height:52px;
+  border:3px solid var(--border); border-top-color:var(--accent);
+  border-radius:50%; animation:spin .8s linear infinite;
+  box-shadow:0 0 18px rgba(79,195,247,.2);
+}
+.loader-steps { display:flex; flex-direction:column; gap:6px; text-align:center; }
+.lstep { font-family:var(--mono); font-size:11px; color:var(--text3); transition:color .3s; }
+.lstep.active { color:var(--accent); }
+.lstep.done { color:var(--text2); }
+.lstep.done::before { content:'✓ '; }
+
+/* ─── API KEY MODAL ─── */
+.modal-overlay {
+  position:fixed; inset:0;
+  background:rgba(7,9,13,.9); backdrop-filter:blur(6px);
+  z-index:800; display:none;
+  align-items:center; justify-content:center;
+}
+.modal-overlay.show { display:flex; }
+.modal {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r2); padding:32px;
+  max-width:480px; width:90%;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);
+}
+.modal-title { font-family:var(--display); font-size:28px; letter-spacing:1px; margin-bottom:8px; }
+.modal-sub { font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:20px; }
+.modal-input { width:100%; background:var(--surface); border:1px solid var(--border); color:var(--accent); padding:10px 14px; border-radius:var(--r); font-family:var(--mono); font-size:13px; outline:none; transition:border-color .2s; margin-bottom:10px; }
+.modal-input:focus { border-color:var(--accent); }
+.modal-hint { font-family:var(--mono); font-size:11px; color:var(--text3); margin-bottom:20px; line-height:1.6; }
+.modal-hint a { color:var(--accent); text-decoration:none; }
+.modal-btns { display:flex; gap:8px; }
+
+/* ─── MOBILE ─── */
+.mob-btn { display:none; position:fixed; top:12px; left:12px; z-index:200; background:var(--card); border:1px solid var(--border); border-radius:var(--r); padding:7px 10px; cursor:pointer; font-size:15px; }
+
+@media(max-width:880px) {
+  .sidebar { transform:translateX(-100%); }
+  .sidebar.open { transform:translateX(0); }
+  .main { margin-left:0; }
+  .mob-btn { display:flex; }
+  .extract-grid { grid-template-columns:1fr; }
+  .metrics { grid-template-columns:repeat(2,1fr); }
+  .plan-grid { grid-template-columns:1fr; }
+  .dash-grid { grid-template-columns:1fr; }
+  .settings-layout { grid-template-columns:1fr; }
+  .stats-row { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+
+<button class="mob-btn" onclick="toggleSidebar()">☰</button>
+
+<!-- API KEY MODAL -->
+<div class="modal-overlay" id="apiModal">
+  <div class="modal">
+    <div class="modal-title">GET STARTED FREE</div>
+    <div class="modal-sub">DataLens uses Google Gemini Vision — completely free, no credit card required. Enter your Gemini API key to begin.</div>
+    <input class="modal-input" id="modalKey" type="password" placeholder="Paste your Gemini API key here..." />
+    <div class="modal-hint">
+      Get your free key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a> → Create API Key → Copy → Paste above.<br>
+      Your key is stored locally in your browser only.
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-primary" style="flex:1" onclick="saveApiKey()">Save & Start Extracting</button>
+      <button class="btn btn-ghost" onclick="dismissModal()">Skip for now</button>
+    </div>
+  </div>
+</div>
+
+<div class="app">
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="logo-wrap">
+    <div class="logo-row">
+      <div class="logo-gem">📊</div>
+      <div class="logo-text">Data<em>Lens</em></div>
+    </div>
+    <div class="logo-sub">Figure → Raw Data</div>
+    <div class="powered">Gemini Vision · Free</div>
+  </div>
+
+  <nav class="nav">
+    <div class="nav-label">Main</div>
+    <button class="nav-btn active" onclick="goto('dashboard',this)"><span class="ni">⊞</span>Dashboard</button>
+    <button class="nav-btn" onclick="goto('extract',this)"><span class="ni">⚡</span>Extract<span class="nbadge blue">Free</span></button>
+    <button class="nav-btn" onclick="goto('history',this)"><span class="ni">◷</span>History<span class="nbadge" id="hBadge">0</span></button>
+    <div class="nav-label">Account</div>
+    <button class="nav-btn" onclick="goto('pricing',this)"><span class="ni">◈</span>Pricing</button>
+    <button class="nav-btn" onclick="goto('settings',this)"><span class="ni">⚙</span>Settings</button>
+  </nav>
+
+  <div class="sidebar-foot">
+    <div class="apikey-box">
+      <div class="apikey-label">Gemini API Key</div>
+      <input class="apikey-input" id="sidebarKey" type="password" placeholder="AIza..." oninput="updateKey(this.value)" />
+      <div class="apikey-hint">Free key → <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a></div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-path">DataLens / <span id="pageTitle">Dashboard</span></div>
+    <div class="topbar-right">
+      <div class="status-chip"><div class="blink"></div>Gemini Free</div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ══ DASHBOARD ══ -->
+    <div class="page active" id="page-dashboard">
+      <div class="ph">
+        <div class="ph-title">DASHBOARD</div>
+        <div class="ph-sub">Your extraction activity and usage at a glance.</div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric">
+          <span class="metric-icon">📤</span>
+          <div class="metric-num" id="mTotal">0</div>
+          <div class="metric-label">Extractions</div>
+          <div class="metric-badge" id="mChange">+0</div>
+        </div>
+        <div class="metric">
+          <span class="metric-icon">✅</span>
+          <div class="metric-num" id="mSuccess">0</div>
+          <div class="metric-label">Successful</div>
+          <div class="metric-badge">Done</div>
+        </div>
+        <div class="metric">
+          <span class="metric-icon">📋</span>
+          <div class="metric-num" id="mPoints">0</div>
+          <div class="metric-label">Data Points</div>
+          <div class="metric-badge">Total</div>
+        </div>
+        <div class="metric">
+          <span class="metric-icon">💎</span>
+          <div class="metric-num">∞</div>
+          <div class="metric-label">Credits Left</div>
+          <div class="metric-badge">Free</div>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <div>
+          <div class="section-label">Recent Extractions</div>
+          <div class="rec-list" id="recList">
+            <div style="text-align:center;padding:36px;color:var(--text3);font-family:var(--mono);font-size:11px">No extractions yet.<br>Go to Extract to get started.</div>
+          </div>
+        </div>
+        <div>
+          <div class="section-label">Usage</div>
+          <div class="usage-card">
+            <div class="u-label">Gemini Free Tier — Unlimited*</div>
+            <div class="ubar-wrap">
+              <div class="ubar-head"><span>Extractions</span><span id="uPct">0 total</span></div>
+              <div class="ubar-track"><div class="ubar-fill" id="uBar" style="width:0%"></div></div>
+            </div>
+            <div class="ubar-wrap">
+              <div class="ubar-head"><span>Data Points</span><span id="ptPct">0 pts</span></div>
+              <div class="ubar-track"><div class="ubar-fill" id="ptBar" style="width:0%"></div></div>
+            </div>
+            <div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px">*15 req/min on free tier</div>
+            <div class="section-label" style="margin-top:16px">Quick Actions</div>
+            <div class="qactions">
+              <div class="qa" onclick="goto('extract',document.querySelector('[onclick*=extract]'))">⚡ New Extraction</div>
+              <div class="qa" onclick="goto('history',document.querySelector('[onclick*=history]'))">◷ View History</div>
+              <div class="qa" onclick="document.getElementById('apiModal').classList.add('show')">🔑 Set API Key</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ EXTRACT ══ -->
+    <div class="page" id="page-extract">
+      <div class="ph">
+        <div class="ph-title" style="font-size:30px">EXTRACT</div>
+        <div class="ph-sub">Upload any chart image — Gemini Vision AI extracts the raw data for free.</div>
+      </div>
+
+      <div class="extract-grid">
+        <!-- LEFT: Upload -->
+        <div class="panel">
+          <div class="panel-head">
+            <div class="wdots"><div class="wd wd-r"></div><div class="wd wd-y"></div><div class="wd wd-g"></div></div>
+            <div class="panel-label">Input — <strong>Figure Upload</strong></div>
+          </div>
+          <div class="panel-body">
+            <div class="upload-zone" id="uploadZone">
+              <input type="file" id="fileIn" accept="image/*" />
+              <div class="uz-icon">🔬</div>
+              <div class="uz-title">Drop chart figure here</div>
+              <div class="uz-sub">or click to browse</div>
+              <div class="chips">
+                <span class="chip">PNG</span><span class="chip">JPG</span>
+                <span class="chip">WEBP</span><span class="chip">GIF</span><span class="chip">BMP</span>
+              </div>
+            </div>
+
+            <div class="preview" id="preview">
+              <div class="preview-img-box">
+                <img id="prevImg" src="" alt="figure" />
+              </div>
+              <button class="btn btn-danger" onclick="clearImg()">✕ Remove image</button>
+            </div>
+
+            <div class="ctrls">
+              <div class="cg">
+                <div class="cg-label">Chart Type</div>
+                <select id="chartType">
+                  <option value="auto">🤖 Auto-detect</option>
+                  <option value="bar">Bar Chart</option>
+                  <option value="scatter">Scatter Plot</option>
+                  <option value="line">Line Chart</option>
+                  <option value="dot">Dot / Jitter</option>
+                  <option value="box">Box Plot</option>
+                  <option value="heatmap">Heatmap</option>
+                  <option value="pie">Pie / Donut</option>
+                  <option value="violin">Violin Plot</option>
+                  <option value="area">Area Chart</option>
+                </select>
+              </div>
+              <div class="cg">
+                <div class="cg-label">Precision</div>
+                <select id="precision">
+                  <option value="2">2 decimals</option>
+                  <option value="3" selected>3 decimals</option>
+                  <option value="4">4 decimals</option>
+                  <option value="5">5 decimals</option>
+                </select>
+              </div>
+              <div class="cg">
+                <div class="cg-label">Output</div>
+                <select id="outFmt">
+                  <option value="csv">CSV</option>
+                  <option value="json">JSON</option>
+                  <option value="both" selected>CSV + JSON</option>
+                </select>
+              </div>
+              <div class="cg">
+                <div class="cg-label">Scale Hint</div>
+                <select id="scaleHint">
+                  <option value="auto">Auto-detect</option>
+                  <option value="linear">Linear</option>
+                  <option value="log">Logarithmic</option>
+                </select>
+              </div>
+            </div>
+
+            <button class="btn btn-primary btn-full" id="extractBtn" onclick="extract()" disabled>
+              <div class="spin" id="extractSpin"></div>
+              <span id="extractTxt">⚡ Extract Data (Free)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- RIGHT: Results -->
+        <div class="panel">
+          <div class="panel-head">
+            <div class="wdots"><div class="wd wd-r"></div><div class="wd wd-y"></div><div class="wd wd-g"></div></div>
+            <div class="panel-label">Output — <strong>Extracted Data</strong></div>
+          </div>
+          <div class="panel-body">
+            <div class="r-empty" id="rEmpty">
+              <div class="big">⌗</div>
+              <div>Upload a figure and run<br>extraction to see results here</div>
+            </div>
+
+            <div class="r-content" id="rContent">
+              <div class="stats-row" id="statsRow"></div>
+
+              <div class="tabs">
+                <button class="tab active" onclick="swTab('table',this)">Table</button>
+                <button class="tab" onclick="swTab('csv',this)">CSV</button>
+                <button class="tab" onclick="swTab('json',this)">JSON</button>
+                <button class="tab" onclick="swTab('analysis',this)">Analysis</button>
+              </div>
+
+              <div class="tc active" id="tc-table">
+                <div class="tbl-wrap">
+                  <table><thead id="tHead"></thead><tbody id="tBody"></tbody></table>
+                </div>
+              </div>
+              <div class="tc" id="tc-csv"><div class="code-view" id="csvView"></div></div>
+              <div class="tc" id="tc-json"><div class="code-view" id="jsonView"></div></div>
+              <div class="tc" id="tc-analysis"><div class="analysis-view" id="aView"></div></div>
+
+              <div class="export-row">
+                <button class="btn btn-ghost" onclick="copyCSV()">📋 Copy CSV</button>
+                <button class="btn btn-ghost" onclick="dlCSV()">⬇ CSV</button>
+                <button class="btn btn-ghost" onclick="dlJSON()">⬇ JSON</button>
+                <button class="btn btn-ghost" onclick="dlExcel()">⬇ Excel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ HISTORY ══ -->
+    <div class="page" id="page-history">
+      <div class="ph">
+        <div class="ph-title" style="font-size:30px">HISTORY</div>
+        <div class="ph-sub">All past extractions. Click any row to reload it.</div>
+      </div>
+      <div class="hist-controls">
+        <input type="text" class="search" placeholder="Search filename or chart type..." id="histSearch" oninput="filterHist()" />
+        <button class="btn btn-ghost" onclick="clearHist()">Clear All</button>
+      </div>
+      <div class="hist-tbl-wrap">
+        <table class="htbl">
+          <thead><tr>
+            <th>Filename</th><th>Chart Type</th><th>Series</th>
+            <th>Points</th><th>Confidence</th><th>Date</th><th>Status</th>
+          </tr></thead>
+          <tbody id="histBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ PRICING ══ -->
+    <div class="page" id="page-pricing">
+      <div class="pricing-head">
+        <div class="pricing-title">100% FREE</div>
+        <div class="pricing-sub">Powered by Google Gemini — no credit card, no limits.</div>
+      </div>
+      <div class="plan-grid">
+        <div class="plan">
+          <div class="plan-name">Academic</div>
+          <div class="plan-price"><sup>$</sup>0</div>
+          <div class="plan-period">forever free</div>
+          <hr class="plan-div">
+          <div class="plan-feats">
+            <div class="pf"><span class="ck">✓</span> Unlimited extractions*</div>
+            <div class="pf"><span class="ck">✓</span> All chart types</div>
+            <div class="pf"><span class="ck">✓</span> CSV & JSON export</div>
+            <div class="pf"><span class="ck">✓</span> Full history</div>
+            <div class="pf dim"><span class="ck">–</span> API integration</div>
+            <div class="pf dim"><span class="ck">–</span> Batch upload</div>
+          </div>
+          <button class="btn btn-primary" style="width:100%">Current Plan ✓</button>
+        </div>
+        <div class="plan hot">
+          <div class="plan-name">Biotech</div>
+          <div class="plan-price"><sup>$</sup>299</div>
+          <div class="plan-period">/month — coming soon</div>
+          <hr class="plan-div">
+          <div class="plan-feats">
+            <div class="pf"><span class="ck">✓</span> Unlimited extractions</div>
+            <div class="pf"><span class="ck">✓</span> All chart types</div>
+            <div class="pf"><span class="ck">✓</span> CSV, JSON, Excel</div>
+            <div class="pf"><span class="ck">✓</span> Full history</div>
+            <div class="pf"><span class="ck">✓</span> REST API access</div>
+            <div class="pf"><span class="ck">✓</span> Batch PDF upload</div>
+          </div>
+          <button class="btn btn-ghost" style="width:100%">Notify Me</button>
+        </div>
+        <div class="plan">
+          <div class="plan-name">Pharma Enterprise</div>
+          <div class="plan-price"><sup>$</sup>Custom</div>
+          <div class="plan-period">annual contract</div>
+          <hr class="plan-div">
+          <div class="plan-feats">
+            <div class="pf"><span class="ck">✓</span> Unlimited extractions</div>
+            <div class="pf"><span class="ck">✓</span> Private deployment</div>
+            <div class="pf"><span class="ck">✓</span> All export formats</div>
+            <div class="pf"><span class="ck">✓</span> Audit trail</div>
+            <div class="pf"><span class="ck">✓</span> SDKs + API</div>
+            <div class="pf"><span class="ck">✓</span> 21 CFR Part 11</div>
+          </div>
+          <button class="btn btn-ghost" style="width:100%">Contact Sales</button>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:24px;font-family:var(--mono);font-size:10px;color:var(--text3)">
+        *Free tier: 15 requests/min via Gemini API · No data stored on our servers
+      </div>
+    </div>
+
+    <!-- ══ SETTINGS ══ -->
+    <div class="page" id="page-settings">
+      <div class="ph">
+        <div class="ph-title" style="font-size:30px">SETTINGS</div>
+        <div class="ph-sub">Manage your preferences and API configuration.</div>
+      </div>
+      <div class="settings-layout">
+        <div>
+          <div class="snav">
+            <button class="snav-btn active" onclick="sTab('profile',this)">Profile</button>
+            <button class="snav-btn" onclick="sTab('apikey',this)">API Key</button>
+            <button class="snav-btn" onclick="sTab('defaults',this)">Defaults</button>
+            <button class="snav-btn" onclick="sTab('danger',this)">Danger Zone</button>
+          </div>
+        </div>
+        <div>
+          <div id="st-profile">
+            <div class="ssec">
+              <div class="ssec-head"><div class="ssec-title">Profile</div><div class="ssec-sub">Display name and organization</div></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Display Name</div><div class="sf-desc">Shown in exports</div></div><input class="sf-input" id="sName" value="Researcher" oninput="updateName()" /></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Organization</div><div class="sf-desc">Optional affiliation</div></div><input class="sf-input" placeholder="e.g. Pharma Corp" /></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Email</div><div class="sf-desc">For notifications</div></div><input class="sf-input" type="email" placeholder="you@lab.com" /></div>
+            </div>
+          </div>
+
+          <div id="st-apikey" style="display:none">
+            <div class="ssec">
+              <div class="ssec-head"><div class="ssec-title">Gemini API Key</div><div class="ssec-sub">Your free key from Google AI Studio</div></div>
+              <div class="sfield">
+                <div class="sf-info"><div class="sf-label">API Key</div><div class="sf-desc">Stored in browser localStorage only</div></div>
+                <input class="sf-input" id="settingsKey" type="password" placeholder="AIza..." oninput="updateKey(this.value)" />
+              </div>
+              <div class="sfield">
+                <div class="sf-info"><div class="sf-label">Get Free Key</div><div class="sf-desc">No credit card required</div></div>
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-ghost">Open AI Studio →</a>
+              </div>
+              <div class="sfield">
+                <div class="sf-info"><div class="sf-label">Model</div><div class="sf-desc">Vision model used for extraction</div></div>
+                <select class="sf-input" id="geminiModel" style="min-width:180px">
+                  <option value="gemini-2.5-flash" selected>gemini-2.5-flash-latest (fast, free)</option>
+                  <option value="gemini-1.5-pro">gemini-1.5-pro (accurate)</option>
+                  <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (latest)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div id="st-defaults" style="display:none">
+            <div class="ssec">
+              <div class="ssec-head"><div class="ssec-title">Default Extraction Settings</div><div class="ssec-sub">Applied to all new extractions</div></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Default Precision</div><div class="sf-desc">Decimal places</div></div><select class="sf-input" style="min-width:80px"><option>2</option><option selected>3</option><option>4</option></select></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Auto-detect Chart Type</div><div class="sf-desc">Let AI decide</div></div><div class="tog on" onclick="this.classList.toggle('on')"><div class="tog-k"></div></div></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Extract Error Bars</div><div class="sf-desc">When present in figure</div></div><div class="tog on" onclick="this.classList.toggle('on')"><div class="tog-k"></div></div></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Save to History</div><div class="sf-desc">Auto-save all extractions</div></div><div class="tog on" onclick="this.classList.toggle('on')"><div class="tog-k"></div></div></div>
+            </div>
+          </div>
+
+          <div id="st-danger" style="display:none">
+            <div class="ssec">
+              <div class="ssec-head"><div class="ssec-title" style="color:var(--red)">⚠ Danger Zone</div><div class="ssec-sub">Irreversible actions</div></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Clear History</div><div class="sf-desc">Delete all extraction records</div></div><button class="btn btn-danger" onclick="clearHist();toast('History cleared','warn')">Clear History</button></div>
+              <div class="sfield"><div class="sf-info"><div class="sf-label">Remove API Key</div><div class="sf-desc">Delete stored Gemini key</div></div><button class="btn btn-danger" onclick="removeKey()">Remove Key</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<div class="toast-box" id="toastBox"></div>
+
+<div class="loader" id="loader">
+  <div class="loader-ring"></div>
+  <div class="loader-steps">
+    <div class="lstep" id="ls1">Sending image to Gemini...</div>
+    <div class="lstep" id="ls2">Detecting chart type...</div>
+    <div class="lstep" id="ls3">Reading axes & scale...</div>
+    <div class="lstep" id="ls4">Extracting data points...</div>
+    <div class="lstep" id="ls5">Structuring output...</div>
+  </div>
+</div>
+
+<script>
+/* ─── STATE ─── */
+const S = {
+  img: null, fname: 'figure',
+  data: null, history: [],
+  apiKey: localStorage.getItem('gemini_key') || '',
+  model: 'gemini-1.5-flash'
+};
+
+/* ─── INIT ─── */
+(function init() {
+  // Load history
+  try {
+    const h = localStorage.getItem('datalens_hist');
+    if (h) { S.history = JSON.parse(h); renderHist(); updateDash(); }
+  } catch(e) {}
+
+  // Load API key
+  if (S.apiKey) {
+    document.getElementById('sidebarKey').value = S.apiKey;
+    document.getElementById('settingsKey').value = S.apiKey;
+  } else {
+    // Show modal on first visit
+    setTimeout(() => document.getElementById('apiModal').classList.add('show'), 600);
+  }
+})();
+
+/* ─── API KEY ─── */
+function updateKey(val) {
+  S.apiKey = val.trim();
+  localStorage.setItem('gemini_key', S.apiKey);
+  document.getElementById('sidebarKey').value = S.apiKey;
+  document.getElementById('settingsKey').value = S.apiKey;
+}
+
+function saveApiKey() {
+  const k = document.getElementById('modalKey').value.trim();
+  if (!k) { toast('Please enter your API key', 'err'); return; }
+  updateKey(k);
+  document.getElementById('apiModal').classList.remove('show');
+  toast('✅ API key saved! Ready to extract.');
+}
+
+function dismissModal() {
+  document.getElementById('apiModal').classList.remove('show');
+}
+
+function removeKey() {
+  S.apiKey = '';
+  localStorage.removeItem('gemini_key');
+  document.getElementById('sidebarKey').value = '';
+  document.getElementById('settingsKey').value = '';
+  toast('API key removed', 'warn');
+}
+
+/* ─── NAV ─── */
+const titles = { dashboard:'Dashboard', extract:'Extract', history:'History', pricing:'Pricing', settings:'Settings' };
+
+function goto(page, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('pageTitle').textContent = titles[page] || page;
+  if (btn) btn.classList.add('active');
+  if (window.innerWidth < 880) document.getElementById('sidebar').classList.remove('open');
+}
+
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+/* ─── FILE UPLOAD ─── */
+const UZ = document.getElementById('uploadZone');
+const FI = document.getElementById('fileIn');
+
+UZ.addEventListener('dragover', e => { e.preventDefault(); UZ.classList.add('over'); });
+UZ.addEventListener('dragleave', () => UZ.classList.remove('over'));
+UZ.addEventListener('drop', e => { e.preventDefault(); UZ.classList.remove('over'); const f = e.dataTransfer.files[0]; if(f) loadFile(f); });
+FI.addEventListener('change', e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+
+function loadFile(file) {
+  if (!file.type.startsWith('image/')) { toast('Please upload an image file', 'err'); return; }
+  const r = new FileReader();
+  r.onload = e => {
+    S.img = e.target.result;
+    S.fname = file.name.replace(/\.[^.]+$/, '');
+    document.getElementById('prevImg').src = S.img;
+    UZ.style.display = 'none';
+    document.getElementById('preview').classList.add('show');
+    document.getElementById('extractBtn').disabled = false;
+    toast('Image loaded: ' + file.name.slice(0, 32));
+  };
+  r.readAsDataURL(file);
+}
+
+function clearImg() {
+  S.img = null; FI.value = '';
+  UZ.style.display = '';
+  document.getElementById('preview').classList.remove('show');
+  document.getElementById('extractBtn').disabled = true;
+  document.getElementById('rEmpty').style.display = '';
+  document.getElementById('rContent').classList.remove('show');
+}
+
+/* ─── EXTRACTION ─── */
+async function extract() {
+  if (!S.img) return;
+  if (!S.apiKey) {
+    document.getElementById('apiModal').classList.add('show');
+    toast('Please set your Gemini API key first', 'warn');
+    return;
+  }
+
+  const chartType = document.getElementById('chartType').value;
+  const precision = parseInt(document.getElementById('precision').value);
+  const model = document.getElementById('geminiModel')?.value || 'gemini-1.5-flash';
+
+  showLoader();
+  document.getElementById('extractBtn').disabled = true;
+  document.getElementById('extractSpin').style.display = 'block';
+  document.getElementById('extractTxt').textContent = 'Extracting...';
+
+  try {
+    const base64    = S.img.split(',')[1];
+    const mimeType  = S.img.split(';')[0].split(':')[1];
+    const prompt    = buildPrompt(chartType, precision);
+
+    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${S.apiKey}`;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: mimeType, data: base64 } },
+            { text: prompt }
+          ]
+        }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    hideLoader();
+    processResult(raw, precision);
+
+  } catch(err) {
+    hideLoader();
+    console.error(err);
+    if (err.message.includes('API_KEY_INVALID') || err.message.includes('API key')) {
+      toast('Invalid API key. Check Settings → API Key', 'err');
+    } else if (err.message.includes('quota') || err.message.includes('429')) {
+      toast('Rate limit hit. Wait 1 minute (free tier: 15 req/min)', 'warn');
+    } else {
+      toast('Error: ' + err.message, 'err');
+    }
+  } finally {
+    document.getElementById('extractBtn').disabled = false;
+    document.getElementById('extractSpin').style.display = 'none';
+    document.getElementById('extractTxt').textContent = '⚡ Extract Data (Free)';
+  }
+}
+
+function buildPrompt(chartType, precision) {
+  const hint = chartType !== 'auto' ? `Chart type: **${chartType}**.` : 'Auto-detect the chart type.';
+  return `You are an expert scientific figure digitizer. Analyze this chart and extract ALL data points precisely.
+
+${hint}
+
+Respond ONLY with raw valid JSON — absolutely no markdown fences, no explanation, no preamble. Just the JSON object.
+
+Required schema:
+{
+  "chart_type": "bar|scatter|line|dot|box|heatmap|pie|violin|area|unknown",
+  "title": "chart title or null",
+  "x_axis": {
+    "label": "string or null",
+    "unit": "string or null",
+    "scale": "linear|log",
+    "min": number_or_null,
+    "max": number_or_null,
+    "categories": ["for categorical axes"]
+  },
+  "y_axis": {
+    "label": "string or null",
+    "unit": "string or null",
+    "scale": "linear|log",
+    "min": number_or_null,
+    "max": number_or_null
+  },
+  "series": [
+    {
+      "name": "series name",
+      "color": "color description",
+      "data": [
+        {
+          "x": "string_label_or_number",
+          "y": number,
+          "error_low": number_or_null,
+          "error_high": number_or_null,
+          "size": number_or_null
+        }
+      ]
+    }
+  ],
+  "analysis": {
+    "confidence": "high|medium|low",
+    "confidence_reason": "brief reason",
+    "issues": ["any extraction difficulties"],
+    "insights": "2-3 sentence data summary",
+    "chart_description": "structural description"
+  }
+}
+
+Rules:
+- Use ${precision} decimal places for all numbers
+- For categorical x-axes: use the category string as x value
+- For grouped bar charts: one series per group
+- Error bars: absolute values (not relative)
+- For log scale: extract actual numeric values`;
+}
+
+function processResult(raw, precision) {
+  let data;
+  try {
+    let c = raw.trim().replace(/^```json\n?/, '').replace(/^```\n?/, '').replace(/```$/, '').trim();
+    // Try to find JSON object if there's extra text
+    const m = c.match(/\{[\s\S]*\}/);
+    if (m) c = m[0];
+    data = JSON.parse(c);
+  } catch(e) {
+    document.getElementById('rEmpty').style.display = 'none';
+    document.getElementById('rContent').classList.add('show');
+    document.getElementById('aView').innerHTML = `<div class="as"><h5>Raw Response</h5><pre style="white-space:pre-wrap;font-size:10px">${raw}</pre></div>`;
+    swTab('analysis', document.querySelectorAll('.tab')[3]);
+    toast('Could not parse JSON — see Analysis tab', 'warn');
+    return;
+  }
+
+  S.data = data;
+  let pts = 0;
+  (data.series || []).forEach(s => pts += (s.data || []).length);
+
+  const entry = {
+    id: Date.now(),
+    filename: S.fname,
+    chartType: data.chart_type,
+    series: (data.series || []).length,
+    points: pts,
+    confidence: data.analysis?.confidence || 'unknown',
+    date: new Date().toLocaleDateString(),
+    time: new Date().toLocaleTimeString(),
+    data
+  };
+
+  S.history.unshift(entry);
+  saveHist();
+  updateDash();
+  renderHist();
+  renderResults(data, precision);
+  toast(`✅ Done! ${pts} data points extracted.`);
+}
+
+/* ─── RENDER RESULTS ─── */
+function renderResults(data, precision) {
+  document.getElementById('rEmpty').style.display = 'none';
+  document.getElementById('rContent').classList.add('show');
+
+  const series = data.series || [];
+  let total = 0; series.forEach(s => total += (s.data||[]).length);
+
+  const conf = data.analysis?.confidence || '?';
+  const cc   = conf==='high'?'ch':conf==='medium'?'cm':'cl';
+
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat"><div class="stat-v">${data.chart_type||'?'}</div><div class="stat-k">Type</div></div>
+    <div class="stat"><div class="stat-v">${series.length}</div><div class="stat-k">Series</div></div>
+    <div class="stat"><div class="stat-v">${total}</div><div class="stat-k">Points</div></div>
+    <div class="stat"><div class="stat-v"><span class="conf ${cc}">${conf}</span></div><div class="stat-k">Confidence</div></div>
+  `;
+
+  const rows   = flatRows(series, precision);
+  const xLabel = data.x_axis?.label || 'X';
+  const yLabel = data.y_axis?.label || 'Y';
+  const hasErr = rows.some(r => r.el||r.eh);
+  const hasSz  = rows.some(r => r.sz);
+
+  document.getElementById('tHead').innerHTML = `<tr>
+    <th>Series</th>
+    <th>${xLabel}${data.x_axis?.unit?' ('+data.x_axis.unit+')':''}</th>
+    <th>${yLabel}${data.y_axis?.unit?' ('+data.y_axis.unit+')':''}</th>
+    ${hasErr?'<th>Err Low</th><th>Err High</th>':''}
+    ${hasSz?'<th>Size</th>':''}
+  </tr>`;
+
+  document.getElementById('tBody').innerHTML = rows.map(r => `<tr>
+    <td>${r.series}</td><td>${r.x}</td><td>${r.y}</td>
+    ${hasErr?`<td>${r.el||''}</td><td>${r.eh||''}</td>`:''}
+    ${hasSz?`<td>${r.sz||''}</td>`:''}
+  </tr>`).join('');
+
+  const csv = buildCSV(rows, xLabel, yLabel, hasErr, hasSz);
+  document.getElementById('csvView').textContent  = csv;
+  document.getElementById('jsonView').textContent = JSON.stringify(data, null, 2);
+  window._csv  = csv;
+  window._json = data;
+
+  const ai = data.analysis || {};
+  const issues = (ai.issues?.length)
+    ? ai.issues.map(i=>`<div style="color:var(--amber);font-size:11px;margin-bottom:3px">⚠ ${i}</div>`).join('')
+    : '<div style="color:var(--text3);font-size:11px">None detected</div>';
+
+  document.getElementById('aView').innerHTML = `
+    <div class="as"><h5>Summary</h5><p>${ai.insights||'N/A'}</p></div>
+    <div class="as"><h5>Chart Structure</h5><p>${ai.chart_description||'N/A'}</p></div>
+    <div class="as">
+      <h5>Axes</h5>
+      <p>X: <strong>${data.x_axis?.label||'—'}</strong> · ${data.x_axis?.scale||'linear'} · ${data.x_axis?.min??'?'} → ${data.x_axis?.max??'?'} ${data.x_axis?.unit||''}</p>
+      <p>Y: <strong>${data.y_axis?.label||'—'}</strong> · ${data.y_axis?.scale||'linear'} · ${data.y_axis?.min??'?'} → ${data.y_axis?.max??'?'} ${data.y_axis?.unit||''}</p>
+    </div>
+    <div class="as"><h5>Issues</h5>${issues}</div>
+    <div class="as"><h5>Confidence</h5><span class="conf ${cc}">${conf}</span><span style="margin-left:8px;font-size:11px;color:var(--text3)">${ai.confidence_reason||''}</span></div>
+  `;
+}
+
+function flatRows(series, p) {
+  const rows = [];
+  series.forEach(s => (s.data||[]).forEach(pt => rows.push({
+    series: s.name || 'Series',
+    x: pt.x,
+    y: typeof pt.y === 'number' ? pt.y.toFixed(p) : pt.y,
+    el: pt.error_low  != null ? Number(pt.error_low).toFixed(p)  : '',
+    eh: pt.error_high != null ? Number(pt.error_high).toFixed(p) : '',
+    sz: pt.size       != null ? Number(pt.size).toFixed(p)       : ''
+  })));
+  return rows;
+}
+
+function buildCSV(rows, xl, yl, he, hs) {
+  const cols = ['series', xl, yl];
+  if (he) cols.push('error_low','error_high');
+  if (hs) cols.push('size');
+  const lines = [cols.join(',')];
+  rows.forEach(r => {
+    const v = [`"${r.series}"`, `"${r.x}"`, r.y];
+    if (he) v.push(r.el, r.eh);
+    if (hs) v.push(r.sz);
+    lines.push(v.join(','));
+  });
+  return lines.join('\n');
+}
+
+/* ─── TABS ─── */
+function swTab(t, btn) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tc').forEach(c => c.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('tc-'+t).classList.add('active');
+}
+
+/* ─── EXPORT ─── */
+function copyCSV()  { if(!window._csv)  return; navigator.clipboard.writeText(window._csv).then(()=>toast('📋 CSV copied')); }
+function dlCSV()    { if(!window._csv)  return; dl(S.fname+'_data.csv', window._csv, 'text/csv'); toast('⬇ CSV downloaded'); }
+function dlJSON()   { if(!window._json) return; dl(S.fname+'_data.json', JSON.stringify(window._json,null,2), 'application/json'); toast('⬇ JSON downloaded'); }
+function dlExcel()  { if(!window._csv)  return; dl(S.fname+'_data.tsv', '\uFEFF'+window._csv.replace(/,/g,'\t'), 'text/tab-separated-values'); toast('⬇ Excel TSV downloaded'); }
+
+function dl(name, content, type) {
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([content],{type})), download: name });
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ─── HISTORY ─── */
+function renderHist(filter) {
+  const items = filter
+    ? S.history.filter(h => h.filename.toLowerCase().includes(filter) || (h.chartType||'').toLowerCase().includes(filter))
+    : S.history;
+
+  document.getElementById('hBadge').textContent = S.history.length;
+
+  const icons = { bar:'📊',scatter:'⚪',line:'📈',dot:'•',box:'📦',heatmap:'🟥',pie:'🥧',violin:'🎻',area:'📉' };
+  const tbody = document.getElementById('histBody');
+
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:28px;color:var(--text3)">No extractions found.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = items.map(h => {
+    const cc = h.confidence==='high'?'ch':h.confidence==='medium'?'cm':'cl';
+    return `<tr onclick="loadHistEntry(${h.id})">
+      <td>${h.filename}</td>
+      <td>${h.chartType||'?'}</td>
+      <td>${h.series}</td>
+      <td>${h.points}</td>
+      <td><span class="conf ${cc}">${h.confidence}</span></td>
+      <td>${h.date}</td>
+      <td><span style="color:var(--green);font-size:10px">✓ done</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function filterHist() { renderHist(document.getElementById('histSearch').value.toLowerCase() || null); }
+
+function loadHistEntry(id) {
+  const e = S.history.find(h => h.id === id);
+  if (!e) return;
+  S.data = e.data; S.fname = e.filename;
+  renderResults(e.data, 3);
+  goto('extract', document.querySelector('[onclick*=extract]'));
+  toast('Loaded: ' + e.filename);
+}
+
+function clearHist() {
+  S.history = [];
+  localStorage.removeItem('datalens_hist');
+  renderHist(); updateDash();
+  toast('History cleared', 'warn');
+}
+
+function saveHist() {
+  try { localStorage.setItem('datalens_hist', JSON.stringify(S.history.slice(0,100))); } catch(e) {}
+}
+
+/* ─── DASHBOARD ─── */
+function updateDash() {
+  const total   = S.history.length;
+  const success = S.history.filter(h => h.confidence !== 'low').length;
+  const pts     = S.history.reduce((a,h) => a+(h.points||0), 0);
+
+  document.getElementById('mTotal').textContent   = total;
+  document.getElementById('mSuccess').textContent = success;
+  document.getElementById('mPoints').textContent  = pts > 999 ? (pts/1000).toFixed(1)+'k' : pts;
+  document.getElementById('mChange').textContent  = `+${total}`;
+  document.getElementById('uPct').textContent     = total + ' total';
+  document.getElementById('uBar').style.width     = Math.min(100, total * 2) + '%';
+  document.getElementById('ptPct').textContent    = pts + ' pts';
+  document.getElementById('ptBar').style.width    = Math.min(100, pts / 5) + '%';
+
+  const icons = { bar:'📊',scatter:'⚪',line:'📈',dot:'•',box:'📦',heatmap:'🟥',pie:'🥧',violin:'🎻',area:'📉' };
+  const list  = document.getElementById('recList');
+
+  if (!S.history.length) {
+    list.innerHTML = `<div style="text-align:center;padding:36px;color:var(--text3);font-family:var(--mono);font-size:11px">No extractions yet.<br>Go to Extract to get started.</div>`;
+    return;
+  }
+
+  list.innerHTML = S.history.slice(0,5).map(h => `
+    <div class="rec-item" onclick="loadHistEntry(${h.id})">
+      <div class="rec-icon">${icons[h.chartType]||'📊'}</div>
+      <div class="rec-info">
+        <div class="rec-name">${h.filename}</div>
+        <div class="rec-meta">${h.chartType} · ${h.points} pts · ${h.date}</div>
+      </div>
+      <span class="rec-tag">done</span>
+    </div>
+  `).join('');
+}
+
+/* ─── SETTINGS TABS ─── */
+function sTab(t, btn) {
+  document.querySelectorAll('.snav-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  ['profile','apikey','defaults','danger'].forEach(k => {
+    const el = document.getElementById('st-'+k);
+    if (el) el.style.display = k===t ? '' : 'none';
+  });
+}
+
+function updateName() {
+  // Could update a display name somewhere if needed
+}
+
+/* ─── LOADER ─── */
+let loaderTimer;
+function showLoader() {
+  document.getElementById('loader').classList.add('show');
+  const steps = ['ls1','ls2','ls3','ls4','ls5'];
+  steps.forEach(s => document.getElementById(s).className = 'lstep');
+  let i = 0;
+  loaderTimer = setInterval(() => {
+    if (i > 0) document.getElementById(steps[i-1]).classList.add('done');
+    if (i < steps.length) { document.getElementById(steps[i]).classList.add('active'); i++; }
+    else clearInterval(loaderTimer);
+  }, 700);
+}
+
+function hideLoader() {
+  clearInterval(loaderTimer);
+  document.getElementById('loader').classList.remove('show');
+}
+
+/* ─── TOASTS ─── */
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (type?' '+type:'');
+  el.textContent = msg;
+  document.getElementById('toastBox').appendChild(el);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, 3500);
+}
+</script>
+</body>
+</html>
